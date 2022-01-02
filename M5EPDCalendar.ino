@@ -1,6 +1,11 @@
 #include <M5EPD.h>
 #include <WiFi.h>
+#include <Preferences.h>
+
 #include "auth.h"
+
+Preferences pref;
+#define prefname "calendar"
 
 M5EPD_Canvas canvas(&M5.EPD);
 
@@ -41,22 +46,17 @@ void connectWiFi()
 {
   const unsigned waitTime = 500, waitTimeOut = 60000;
   unsigned i;
-  static bool firstTime = true;
   
   WiFi.begin(WIFIAP, WIFIPW);
-  if (firstTime) {
-    showMessage(connectingMessage);
-  }
+  showMessage(connectingMessage);
+
   for (i = 0 ; WiFi.status() != WL_CONNECTED && i < waitTimeOut ; i += waitTime) {
     delay(waitTime);
   }
   // if you are connected, print your MAC address:
   showMacAddr();
 
-  if (firstTime) {
-    canvas.fillCanvas(0);
-  }
-  firstTime = false;
+  canvas.fillCanvas(0);
 }
 
 bool NTPSync()
@@ -80,10 +80,29 @@ bool NTPSync()
   return retval;
 }
 
+static int date = -1;
+static bool firstBoot = true;
+static bool wakedup = false;
+
 void setup()
 {
   configTime(9 * 3600, 0, nullptr); // set time zone as JST-9
   // The above is performed without network connection.
+
+  pref.begin(prefname, false);
+  date = pref.getInt("date", -1);
+  firstBoot = pref.getBool("firstboot", true);
+  pref.clear(); // clear the preferences for unexpected reset
+  pref.end();
+
+  //  Check power on reason before calling M5.begin()
+  //  which calls RTC.begin() which clears the timer flag.
+  Wire.begin(21, 22);                  
+  uint8_t data = M5.RTC.readReg(0x01);
+  wakedup = ((data & 4) == 4); // true means waked up by RTC, not by power button
+  if (!wakedup) {
+    firstBoot = true;
+  }
 
   // M5.enableMainPower();
   M5.begin();
@@ -95,6 +114,16 @@ void setup()
 
   canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
   canvas.setTextSize(3);
+
+  if (firstBoot) {
+    showMessage(String("First boot."));
+    firstBoot = false;
+    delay(2000);
+  }
+  if (wakedup) {
+    showMessage(String("Waked up."));
+    delay(2000);
+  }
 
   connectWiFi();
   showMessage(String("Synchronizing time..."));
@@ -115,10 +144,19 @@ void loop()
     slept = false;
     showMessage(connectingMessage);
   }
-  if (M5.BtnP.wasPressed()) {
+  if (1 || M5.BtnP.wasPressed()) {
     delay(1000);
     slept = true;
-    // M5.shutdown(SleepingSeconds);
+    showMessage(String("Sleeping..."));
+    delay(1000);
+
+    pref.begin(prefname, false);
+    pref.putInt("date", date);
+    pref.putBool("firstboot", false);
+    pref.end();
+    
+    M5.shutdown();
+
     delay(1000);
   }
   M5.update();
