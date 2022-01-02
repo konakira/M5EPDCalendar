@@ -66,7 +66,8 @@ showBatteryStatus()
 }
 
 static int date = -1;
-static unsigned long lastNTPconfiguration = 0;
+static time_t lastNTPTime = 0;
+const unsigned long NTP_INTERVAL = (30 * 24 * 60 * 60); // NTP sync once in 30 days
 
 
 String months[] = {String("January "), String("February "), String("March "),
@@ -114,6 +115,8 @@ showCalendar(time_t t)
   char buf[3];
   int lastday;
 
+  Serial.println("showCalendar() called.");
+  
   M5.EPD.Clear(true); 
   canvas.fillCanvas(0);
 
@@ -196,7 +199,6 @@ static const time_t recentPastTime = 1500000000UL; // 2017/7/14 2:40:00 JST
 
 bool NTPSync()
 {
-  const unsigned long NTP_INTERVAL = (24 * 60 * 60 * 1000);
   bool retval = false;
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -204,12 +206,11 @@ bool NTPSync()
   }
   if (WiFi.status() == WL_CONNECTED) {
     // check NTP
-    if (!lastNTPconfiguration || NTP_INTERVAL < millis() - lastNTPconfiguration) {
-      configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
-      lastNTPconfiguration = millis();
-      for (time_t t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
-      retval = true;
-    }
+    configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
+    time_t t;
+    for (t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
+    lastNTPTime = t;
+    retval = true;
   }
   return retval;
 }
@@ -222,7 +223,7 @@ void setup()
 
   pref.begin(prefname, false);
   date = pref.getInt("date", -1);
-  lastNTPconfiguration = pref.getUInt("lastntp", 0);
+  lastNTPTime = pref.getLong("lastntp", 0);
   pref.clear(); // clear the preferences for unexpected reset
   pref.end();
 
@@ -231,67 +232,78 @@ void setup()
   Wire.begin(21, 22);                  
   uint8_t data = M5.RTC.readReg(0x01);
   bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
-  if (!wokeup || date == -1) {
-    firstBoot = true;
-  }
 
   // M5.enableMainPower();
   M5.begin();
-  // M5.enableEPDPower();
-  M5.EPD.SetRotation(0); // electric paper display
-  M5.TP.SetRotation(0); // touch panel
-  M5.EPD.Clear(true); 
-  M5.RTC.begin(); // real time clock
-
-  canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
-  canvas.setTextSize(3);
-
-  if (firstBoot) {
-    showMessage(String("First boot."));
-    delay(2000);
+  Serial.println("Program started.");
+  
+  if (!wokeup || date == -1) {
+    firstBoot = true;
+    Serial.println("first boot.");
   }
+  firstBoot = true; // for maintenance reason.
 
-  connectWiFi();
-  showMessage(String("Synchronizing time..."));
-  if (NTPSync()) {
-    showMessage(String("Time synchromized."));
+  time_t t = time(NULL);
+  struct tm timeInfo;
+  localtime_r(&t, &timeInfo);
+
+  if (!firstBoot && recentPastTime < t && date == timeInfo.tm_mday) {
+    rtc_time_t wutime;
+    Serial.println("Shutting down right now.");
+    wutime.hour = wutime.min = wutime.sec = 0;
+    M5.shutdown(wutime);
   }
   else {
-    showMessage(String("Synchromization failed."));
+    // M5.enableEPDPower();
+    M5.EPD.SetRotation(0); // electric paper display
+    M5.TP.SetRotation(0); // touch panel
+    M5.EPD.Clear(true); 
+    M5.RTC.begin(); // real time clock
+
+    Serial.println("Some updates required.");
+    
+    if (firstBoot) {
+      canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
+      canvas.setTextSize(3);
+      
+      showMessage(String("First boot."));
+      delay(1000);
+
+      Serial.println("Synchronizing time required.");
+      connectWiFi();
+      showMessage(String("Synchronizing time..."));
+      if (NTPSync()) {
+	showMessage(String("Time synchromized."));
+      }
+      else {
+	showMessage(String("Synchromization failed."));
+      }
+    }
+    delay(500);
+    time_t t = time(NULL);
+    showCalendar(t);
+    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+    delay(500);
+
+    pref.begin(prefname, false);
+    pref.putInt("date", date);
+    pref.putLong("lastntp", lastNTPTime);
+    pref.end();
+    rtc_time_t wutime;
+    wutime.hour = wutime.min = wutime.sec = 0;
+    M5.shutdown(wutime);
+
+    delay(500);
   }
-  showBatteryStatus();
 }
 
 void loop()
 {
-  static bool slept = false;
-
-  if (slept) {
-    // M5.EPD.Clear(true);
-    slept = false;
-    showMessage(connectingMessage);
-  }
-  if (1 || M5.BtnP.wasPressed()) {
+  if (M5.BtnP.wasPressed()) {
     rtc_time_t wutime;
-    
-    delay(1000);
-    slept = true;
-    time_t t = time(NULL);
-    showCalendar(t);
-    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
-    delay(1000);
-
-    pref.begin(prefname, false);
-    pref.putInt("date", date);
-    pref.putUInt("lastntp", lastNTPconfiguration);
-    pref.end();
-
     wutime.hour = wutime.min = wutime.sec = 0;
     M5.shutdown(wutime);
-
-    delay(1000);
   }
   M5.update();
-  delay(100);
 }
 
