@@ -60,14 +60,14 @@ showBatteryStatus()
   char buf[6];
   sprintf(buf, "%d%%", batstat);
 
-  canvas.setTextSize(2);
-  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - PADX, PADY);
+  canvas.setTextSize(3);
+  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - PADX, SCREEN_HEIGHT - 30);
   canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
 }
 
 static int date = -1;
-static bool firstBoot = true;
-static bool wokeup = false;
+static unsigned long lastNTPconfiguration = 0;
+
 
 String months[] = {String("January "), String("February "), String("March "),
 		   String("April "), String("May "), String("June "),
@@ -93,13 +93,26 @@ void dateText(char *buf, unsigned d)
   }
 }
 
+unsigned getLastDayOfMonth(time_t t)
+{
+  int mday;
+  struct tm timeInfo;
+  localtime_r(&t, &timeInfo);
+  mday = timeInfo.tm_mday;
+
+  t += (32 - mday) * 24 * 3600;
+  localtime_r(&t, &timeInfo);
+  return 32 - timeInfo.tm_mday;
+}
+
 void
-showDate(time_t t)
+showCalendar(time_t t)
 {
   struct tm timeInfo;
   int32_t posx = 0, posy = 30;
   String today;
   char buf[3];
+  int lastday;
 
   M5.EPD.Clear(true); 
   canvas.fillCanvas(0);
@@ -107,6 +120,7 @@ showDate(time_t t)
   showBatteryStatus();
 
   localtime_r(&t, &timeInfo);
+  lastday = getLastDayOfMonth(t);
 
   String wdayname = wdays[timeInfo.tm_wday];
   String monthname = months[timeInfo.tm_mon];
@@ -138,7 +152,7 @@ showDate(time_t t)
 
   #define REVPADDING 10
   
-  for (unsigned i = 1 ; i < 32 ; i++) {
+  for (unsigned i = 1 ; i <= lastday ; i++) {
     String s;
 
     if (i == date) {
@@ -178,10 +192,11 @@ void connectWiFi()
   canvas.fillCanvas(0);
 }
 
+static const time_t recentPastTime = 1500000000UL; // 2017/7/14 2:40:00 JST
+
 bool NTPSync()
 {
   const unsigned long NTP_INTERVAL = (24 * 60 * 60 * 1000);
-  static unsigned long lastNTPconfiguration = 0;
   bool retval = false;
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -192,7 +207,7 @@ bool NTPSync()
     if (!lastNTPconfiguration || NTP_INTERVAL < millis() - lastNTPconfiguration) {
       configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
       lastNTPconfiguration = millis();
-      for (time_t t = 0 ; t == 0 ; t = time(NULL)); // wait for NTP to synchronize
+      for (time_t t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
       retval = true;
     }
   }
@@ -201,12 +216,13 @@ bool NTPSync()
 
 void setup()
 {
+  bool firstBoot = false;
   configTime(9 * 3600, 0, nullptr); // set time zone as JST-9
   // The above is performed without network connection.
 
   pref.begin(prefname, false);
   date = pref.getInt("date", -1);
-  firstBoot = pref.getBool("firstboot", true);
+  lastNTPconfiguration = pref.getUInt("lastntp", 0);
   pref.clear(); // clear the preferences for unexpected reset
   pref.end();
 
@@ -214,8 +230,8 @@ void setup()
   //  which calls RTC.begin() which clears the timer flag.
   Wire.begin(21, 22);                  
   uint8_t data = M5.RTC.readReg(0x01);
-  wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
-  if (!wokeup) {
+  bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
+  if (!wokeup || date == -1) {
     firstBoot = true;
   }
 
@@ -232,11 +248,6 @@ void setup()
 
   if (firstBoot) {
     showMessage(String("First boot."));
-    firstBoot = false;
-    delay(2000);
-  }
-  if (wokeup) {
-    showMessage(String("Woke up."));
     delay(2000);
   }
 
@@ -261,19 +272,22 @@ void loop()
     showMessage(connectingMessage);
   }
   if (1 || M5.BtnP.wasPressed()) {
+    rtc_time_t wutime;
+    
     delay(1000);
     slept = true;
     time_t t = time(NULL);
-    showDate(t);
+    showCalendar(t);
     canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
     delay(1000);
 
     pref.begin(prefname, false);
     pref.putInt("date", date);
-    pref.putBool("firstboot", false);
+    pref.putUInt("lastntp", lastNTPconfiguration);
     pref.end();
-    
-    M5.shutdown();
+
+    wutime.hour = wutime.min = wutime.sec = 0;
+    M5.shutdown(wutime);
 
     delay(1000);
   }
