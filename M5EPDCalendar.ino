@@ -12,6 +12,12 @@ M5EPD_Canvas canvas(&M5.EPD);
 #define SCREEN_WIDTH 540
 #define SCREEN_HEIGHT 960
 
+#define PADX 10
+#define PADY 10
+
+#define COLWIDTH (SCREEN_WIDTH / 7)
+#define COLHEIGHT 30
+
 static void
 showMacAddr() {
   byte mac[6];
@@ -35,11 +41,94 @@ static String connectingMessage = String("Connecting...");
 
 void showMessage(String mesg)
 {
-  unsigned w = canvas.textWidth(mesg);
-
   canvas.fillCanvas(0);
+  canvas.setTextSize(3);
+  unsigned w = canvas.textWidth(mesg);
   canvas.drawString(mesg, (SCREEN_WIDTH - w) / 2, SCREEN_HEIGHT / 2);
   canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+}
+
+#define MIN_VOLTAGE 3300
+#define MAX_VOLTAGE 4350
+
+void
+showBatteryStatus()
+{
+  double vbat = M5.getBatteryVoltage();
+  //  int charging = M5.Axp.GetBatCurrent();
+  unsigned batstat = (unsigned)((vbat - MIN_VOLTAGE) * 100 / (MAX_VOLTAGE - MIN_VOLTAGE));
+  char buf[6];
+  sprintf(buf, "%d%%", batstat);
+
+  canvas.setTextSize(2);
+  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - PADX, PADY);
+  canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+}
+
+static int date = -1;
+static bool firstBoot = true;
+static bool wokeup = false;
+
+String months[] = {String("January "), String("February "), String("March "),
+		   String("April "), String("May "), String("June "),
+		   String("July "), String("August "), String("September "),
+		   String("October "), String("November "), String("December ")};
+
+String wdays[] = {String("Sunday, "), String("Monday, "), String("Tuesday, "), String("Wednesday, "),
+		  String("Thursday, "), String("Friday, "), String("Saturday, ")};
+
+String shortwdays[] = {String("SUN"), String("MON"), String("TUE"), String("WED"),
+		       String("THU"), String("FRI"), String("SAT"), String("SUN")};
+
+void
+showDate(time_t t)
+{
+  struct tm timeInfo;
+  int32_t posx = 0, posy = 50;
+
+  M5.EPD.Clear(true); 
+  canvas.fillCanvas(0);
+
+  showBatteryStatus();
+
+  localtime_r(&t, &timeInfo);
+
+  String wdayname = wdays[timeInfo.tm_wday];
+  String monthname = months[timeInfo.tm_mon];
+  date = timeInfo.tm_mday;
+
+  // Show info for Today
+  canvas.setTextSize(4);
+  posx += PADX;
+  canvas.drawString(wdayname, posx, posy);
+  posx += canvas.textWidth(wdayname);
+  canvas.drawString(monthname, posx, posy);
+  posx += canvas.textWidth(monthname);
+  canvas.drawNumber(date, posx, posy);
+
+  canvas.setTextSize(3);
+  posy += 50;
+  posx = PADX;
+
+  // showing week name header
+  for (int i = 1 ; i <= 7 ; i++) {
+    canvas.drawString(shortwdays[i], posx, posy);
+    posx += COLWIDTH;
+  }
+  posy += COLHEIGHT;
+
+  // getting week of day
+  int wod = (timeInfo.tm_wday + 35 - (timeInfo.tm_mday - 1)) % 7;
+  if (wod == 0) {
+    wod = 7;
+  }
+  for (unsigned i = 1 ; i < 32 ; i++) {
+    canvas.drawNumber(i, PADX + (wod - 1) * COLWIDTH, posy);
+    if (7 < ++wod) {
+      wod = 1;
+      posy += COLHEIGHT;
+    }
+  }
 }
 
 void connectWiFi()
@@ -80,10 +169,6 @@ bool NTPSync()
   return retval;
 }
 
-static int date = -1;
-static bool firstBoot = true;
-static bool wakedup = false;
-
 void setup()
 {
   configTime(9 * 3600, 0, nullptr); // set time zone as JST-9
@@ -99,8 +184,8 @@ void setup()
   //  which calls RTC.begin() which clears the timer flag.
   Wire.begin(21, 22);                  
   uint8_t data = M5.RTC.readReg(0x01);
-  wakedup = ((data & 4) == 4); // true means waked up by RTC, not by power button
-  if (!wakedup) {
+  wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
+  if (!wokeup) {
     firstBoot = true;
   }
 
@@ -120,8 +205,8 @@ void setup()
     firstBoot = false;
     delay(2000);
   }
-  if (wakedup) {
-    showMessage(String("Waked up."));
+  if (wokeup) {
+    showMessage(String("Woke up."));
     delay(2000);
   }
 
@@ -133,6 +218,7 @@ void setup()
   else {
     showMessage(String("Synchromization failed."));
   }
+  showBatteryStatus();
 }
 
 void loop()
@@ -147,7 +233,9 @@ void loop()
   if (1 || M5.BtnP.wasPressed()) {
     delay(1000);
     slept = true;
-    showMessage(String("Sleeping..."));
+    time_t t = time(NULL);
+    showDate(t);
+    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
     delay(1000);
 
     pref.begin(prefname, false);
