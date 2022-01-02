@@ -9,14 +9,14 @@ Preferences pref;
 
 M5EPD_Canvas canvas(&M5.EPD);
 
-#define SCREEN_WIDTH 540
-#define SCREEN_HEIGHT 960
+#define SCREEN_WIDTH 960
+#define SCREEN_HEIGHT 540
 
 #define PADX 10
 #define PADY 10
 
 #define COLWIDTH (SCREEN_WIDTH / 7)
-#define COLHEIGHT 30
+#define COLHEIGHT 50
 
 static void
 showMacAddr() {
@@ -80,11 +80,26 @@ String wdays[] = {String("Sunday, "), String("Monday, "), String("Tuesday, "), S
 String shortwdays[] = {String("SUN"), String("MON"), String("TUE"), String("WED"),
 		       String("THU"), String("FRI"), String("SAT"), String("SUN")};
 
+void dateText(char *buf, unsigned d)
+{
+  if (d < 10) {
+    buf[0] = '0' + d;
+    buf[1] = '\0';
+  }
+  else {
+    buf[0] = '0' + d / 10;
+    buf[1] = '0' + d % 10;
+    buf[2] = 0;
+  }
+}
+
 void
 showDate(time_t t)
 {
   struct tm timeInfo;
-  int32_t posx = 0, posy = 50;
+  int32_t posx = 0, posy = 30;
+  String today;
+  char buf[3];
 
   M5.EPD.Clear(true); 
   canvas.fillCanvas(0);
@@ -97,22 +112,20 @@ showDate(time_t t)
   String monthname = months[timeInfo.tm_mon];
   date = timeInfo.tm_mday;
 
-  // Show info for Today
-  canvas.setTextSize(4);
-  posx += PADX;
-  canvas.drawString(wdayname, posx, posy);
-  posx += canvas.textWidth(wdayname);
-  canvas.drawString(monthname, posx, posy);
-  posx += canvas.textWidth(monthname);
-  canvas.drawNumber(date, posx, posy);
+  dateText(buf, date);
+  today = wdayname + monthname + String(buf);
 
-  canvas.setTextSize(3);
-  posy += 50;
-  posx = PADX;
+  // Show info for Today
+  canvas.setTextSize(8);
+  canvas.drawString(today, (SCREEN_WIDTH - canvas.textWidth(today)) / 2, posy);
+
+  canvas.setTextSize(6);
+  posy += 90;
+  posx = 0;
 
   // showing week name header
   for (int i = 1 ; i <= 7 ; i++) {
-    canvas.drawString(shortwdays[i], posx, posy);
+    canvas.drawString(shortwdays[i], posx + (COLWIDTH - canvas.textWidth(shortwdays[i])) / 2, posy);
     posx += COLWIDTH;
   }
   posy += COLHEIGHT;
@@ -122,11 +135,28 @@ showDate(time_t t)
   if (wod == 0) {
     wod = 7;
   }
+
+  #define REVPADDING 10
+  
   for (unsigned i = 1 ; i < 32 ; i++) {
-    canvas.drawNumber(i, PADX + (wod - 1) * COLWIDTH, posy);
+    String s;
+
+    if (i == date) {
+      canvas.setTextColor(0);
+      canvas.fillRect((wod - 1) * COLWIDTH + REVPADDING, posy - 5,
+		      COLWIDTH - 2 * REVPADDING, COLHEIGHT, 15);
+    }
+
+    dateText(buf, i);
+    s = String(buf);
+    canvas.drawString(s, (wod - 1) * COLWIDTH + (COLWIDTH - canvas.textWidth(s)) / 2, posy);
     if (7 < ++wod) {
       wod = 1;
       posy += COLHEIGHT;
+    }
+
+    if (i == date) {
+      canvas.setTextColor(15);
     }
   }
 }
@@ -192,8 +222,8 @@ void setup()
   // M5.enableMainPower();
   M5.begin();
   // M5.enableEPDPower();
-  M5.EPD.SetRotation(90); // electric paper display
-  M5.TP.SetRotation(90); // touch panel
+  M5.EPD.SetRotation(0); // electric paper display
+  M5.TP.SetRotation(0); // touch panel
   M5.EPD.Clear(true); 
   M5.RTC.begin(); // real time clock
 
