@@ -12,9 +12,6 @@ M5EPD_Canvas canvas(&M5.EPD);
 #define SCREEN_WIDTH 960
 #define SCREEN_HEIGHT 540
 
-#define PADX 10
-#define PADY 10
-
 #define COLWIDTH (SCREEN_WIDTH / 7)
 #define COLHEIGHT 50
 
@@ -43,8 +40,10 @@ void showMessage(String mesg)
 {
   canvas.fillCanvas(0);
   canvas.setTextSize(64);
+  canvas.setTextDatum(MC_DATUM);
   canvas.drawString(mesg, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-  canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
+  canvas.setTextDatum(TC_DATUM);
 }
 
 /*
@@ -78,14 +77,9 @@ showBatteryStatus()
   sprintf(buf, "%d%%", batstat);
 
   canvas.setTextSize(32);
-  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - PADX, SCREEN_HEIGHT - 30);
-  canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - 10, SCREEN_HEIGHT - 30);
+  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
-
-static int date = -1;
-static time_t lastNTPTime = 0;
-const unsigned long NTP_INTERVAL = (30 * 24 * 60 * 60); // NTP sync once in 30 days
-
 
 String months[] = {String("January "), String("February "), String("March "),
 		   String("April "), String("May "), String("June "),
@@ -131,6 +125,7 @@ showCalendar(time_t t)
   String today;
   char buf[3];
   int lastday;
+  int date;
 
   Serial.println("showCalendar() called.");
   
@@ -209,8 +204,6 @@ void connectWiFi()
   }
   // if you are connected, print your MAC address:
   showMacAddr();
-
-  canvas.fillCanvas(0);
 }
 
 static const time_t recentPastTime = 1500000000UL; // 2017/7/14 2:40:00 JST
@@ -227,7 +220,6 @@ bool NTPSync()
     configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
     time_t t;
     for (t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
-    lastNTPTime = t;
     retval = true;
   }
   return retval;
@@ -236,12 +228,16 @@ bool NTPSync()
 void shutdownToWakeup(time_t t)
 {
   struct tm ti;
-  rtc_time_t wutime;
   time_t sleepsec;
-  
+
   Serial.println("Shutting down right now.");
+
+  /* Not working
+  rtc_time_t wutime;
+
   wutime.hour = wutime.min = wutime.sec = 0;
-  // M5.shutdown(wutime); // not working
+  M5.shutdown(wutime); // not working
+  */
   
   localtime_r(&t, &ti);
 
@@ -259,12 +255,6 @@ void setup()
   configTime(9 * 3600, 0, nullptr); // set time zone as JST-9
   // The above is performed without network connection.
 
-  pref.begin(prefname, false);
-  date = pref.getInt("date", -1);
-  lastNTPTime = pref.getLong("lastntp", 0);
-  pref.clear(); // clear the preferences for unexpected reset
-  pref.end();
-
   //  Check power on reason before calling M5.begin()
   //  which calls RTC.begin() which clears the timer flag.
   // Wire.begin(21, 22);                  
@@ -275,18 +265,13 @@ void setup()
   M5.begin();
   Serial.println("Program started.");
   
-  pref.begin(prefname, false);
-  pref.putInt("date", date);
-  pref.putLong("lastntp", lastNTPTime);
-  pref.end();
-  
   time_t t = time(NULL);
   struct tm timeInfo;
   localtime_r(&t, &timeInfo);
 
   // M5.enableEPDPower();
   M5.EPD.SetRotation(0); // electric paper display
-  M5.TP.SetRotation(0); // touch panel
+  // M5.TP.SetRotation(0); // touch panel
   M5.EPD.Clear(true); 
   M5.RTC.begin(); // real time clock
 
@@ -310,7 +295,7 @@ void setup()
 
   delay(500);
   showCalendar(t);
-  canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
   delay(500);
 
   shutdownToWakeup(t);
