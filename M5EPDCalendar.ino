@@ -48,6 +48,22 @@ void showMessage(String mesg)
   canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
 }
 
+void showTime(time_t t)
+{
+  struct tm timeInfo;
+  localtime_r(&t, &timeInfo);
+
+  String now = String(1900 + timeInfo.tm_year) + String("/") +
+    String(1 + timeInfo.tm_mon) + String("/") +
+    String(timeInfo.tm_mday) + String(" ") +
+    String(timeInfo.tm_hour) + String(":") +
+    String(timeInfo.tm_min) + String(":") +
+    String(timeInfo.tm_sec);
+
+  showMessage(now);
+  delay(1000);
+}
+
 #define MIN_VOLTAGE 3300
 #define MAX_VOLTAGE 4350
 
@@ -215,9 +231,29 @@ bool NTPSync()
   return retval;
 }
 
+void shutdownToWakeup(time_t t)
+{
+  struct tm ti;
+  rtc_time_t wutime;
+  time_t sleepsec;
+  
+  Serial.println("Shutting down right now.");
+  wutime.hour = wutime.min = wutime.sec = 0;
+  // M5.shutdown(wutime); // not working
+  
+  localtime_r(&t, &ti);
+
+  sleepsec = 24 * 3600 - ((ti.tm_hour * 60 + ti.tm_min) * 60 + ti.tm_sec);
+
+  Serial.print("Sleeping ");
+  Serial.print(sleepsec);
+  Serial.println(" sec");
+  
+  M5.shutdown(60);
+}
+
 void setup()
 {
-  bool firstBoot = false;
   configTime(9 * 3600, 0, nullptr); // set time zone as JST-9
   // The above is performed without network connection.
 
@@ -229,80 +265,58 @@ void setup()
 
   //  Check power on reason before calling M5.begin()
   //  which calls RTC.begin() which clears the timer flag.
-  Wire.begin(21, 22);                  
-  uint8_t data = M5.RTC.readReg(0x01);
-  bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
+  // Wire.begin(21, 22);                  
+  // uint8_t data = M5.RTC.readReg(0x01);
+  // bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
 
   // M5.enableMainPower();
   M5.begin();
   Serial.println("Program started.");
   
-  if (!wokeup || date == -1) {
-    firstBoot = true;
-    Serial.println("first boot.");
-  }
-  firstBoot = true; // for maintenance reason.
-
+  pref.begin(prefname, false);
+  pref.putInt("date", date);
+  pref.putLong("lastntp", lastNTPTime);
+  pref.end();
+  
   time_t t = time(NULL);
   struct tm timeInfo;
   localtime_r(&t, &timeInfo);
 
-  if (!firstBoot && recentPastTime < t && date == timeInfo.tm_mday) {
-    rtc_time_t wutime;
-    Serial.println("Shutting down right now.");
-    wutime.hour = wutime.min = wutime.sec = 0;
-    M5.shutdown(wutime);
+  // M5.enableEPDPower();
+  M5.EPD.SetRotation(0); // electric paper display
+  M5.TP.SetRotation(0); // touch panel
+  M5.EPD.Clear(true); 
+  M5.RTC.begin(); // real time clock
+
+  canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
+  canvas.setTextSize(3);
+      
+  showTime(t);
+
+  connectWiFi();
+  showMessage(String("Synchronizing time..."));
+  if (NTPSync()) {
+    showMessage(String("Time synchromized."));
   }
   else {
-    // M5.enableEPDPower();
-    M5.EPD.SetRotation(0); // electric paper display
-    M5.TP.SetRotation(0); // touch panel
-    M5.EPD.Clear(true); 
-    M5.RTC.begin(); // real time clock
-
-    Serial.println("Some updates required.");
-    
-    if (firstBoot) {
-      canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
-      canvas.setTextSize(3);
-      
-      showMessage(String("First boot."));
-      delay(1000);
-
-      Serial.println("Synchronizing time required.");
-      connectWiFi();
-      showMessage(String("Synchronizing time..."));
-      if (NTPSync()) {
-	showMessage(String("Time synchromized."));
-      }
-      else {
-	showMessage(String("Synchromization failed."));
-      }
-    }
-    delay(500);
-    time_t t = time(NULL);
-    showCalendar(t);
-    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
-    delay(500);
-
-    pref.begin(prefname, false);
-    pref.putInt("date", date);
-    pref.putLong("lastntp", lastNTPTime);
-    pref.end();
-    rtc_time_t wutime;
-    wutime.hour = wutime.min = wutime.sec = 0;
-    M5.shutdown(wutime);
-
-    delay(500);
+    showMessage(String("Synchromization failed."));
   }
+  t = time(NULL); // obtain synchronized time
+
+  delay(500);
+  showCalendar(t);
+  canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+  delay(500);
+
+  shutdownToWakeup(t);
+
+  delay(500);
 }
 
 void loop()
 {
   if (M5.BtnP.wasPressed()) {
-    rtc_time_t wutime;
-    wutime.hour = wutime.min = wutime.sec = 0;
-    M5.shutdown(wutime);
+    shutdownToWakeup(time(NULL));
   }
   M5.update();
 }
