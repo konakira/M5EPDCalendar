@@ -92,7 +92,7 @@ String wdays[] = {String("Sunday, "), String("Monday, "), String("Tuesday, "), S
 String shortwdays[] = {String("SUN"), String("MON"), String("TUE"), String("WED"),
 		       String("THU"), String("FRI"), String("SAT"), String("SUN")};
 
-void dateText(char *buf, unsigned d)
+void dayText(char *buf, unsigned d)
 {
   if (d < 10) {
     buf[0] = '0' + d;
@@ -117,6 +117,8 @@ unsigned getLastDayOfMonth(time_t t)
   return 32 - timeInfo.tm_mday;
 }
 
+static int dayDisplayed = 0;
+
 void
 showCalendar(time_t t)
 {
@@ -125,7 +127,6 @@ showCalendar(time_t t)
   String today;
   char buf[3];
   int lastday;
-  int date;
 
   Serial.println("showCalendar() called.");
   
@@ -139,9 +140,9 @@ showCalendar(time_t t)
 
   String wdayname = wdays[timeInfo.tm_wday];
   String monthname = months[timeInfo.tm_mon];
-  date = timeInfo.tm_mday;
+  dayDisplayed = timeInfo.tm_mday;
 
-  dateText(buf, date);
+  dayText(buf, dayDisplayed);
   today = wdayname + monthname + String(buf);
 
   // Show info for Today
@@ -171,13 +172,13 @@ showCalendar(time_t t)
   for (unsigned i = 1 ; i <= lastday ; i++) {
     String s;
 
-    if (i == date) {
+    if (i == dayDisplayed) {
       canvas.setTextColor(0);
       canvas.fillRect((wod - 1) * COLWIDTH + REVPADDING, posy - 5,
 		      COLWIDTH - 2 * REVPADDING, COLHEIGHT, 15);
     }
 
-    dateText(buf, i);
+    dayText(buf, i);
     s = String(buf);
     canvas.drawString(s, (wod - 1) * COLWIDTH + COLWIDTH / 2, posy);
     if (7 < ++wod) {
@@ -185,10 +186,11 @@ showCalendar(time_t t)
       posy += COLHEIGHT;
     }
 
-    if (i == date) {
+    if (i == dayDisplayed) {
       canvas.setTextColor(15);
     }
   }
+  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
 
 void connectWiFi()
@@ -295,7 +297,6 @@ void setup()
 
   delay(500);
   showCalendar(t);
-  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
   delay(500);
 
   shutdownToWakeup(t);
@@ -306,7 +307,15 @@ void setup()
 void loop()
 {
   if (M5.BtnP.wasPressed()) {
-    shutdownToWakeup(time(NULL));
+    shutdownToWakeup(time(NULL)); // may return if USB cable is connected.
+  }
+  else {
+    time_t t = time(NULL);
+    struct tm ti;
+    localtime_r(&t, &ti);
+    if (dayDisplayed != ti.tm_mday) { // update display if day changed
+      showCalendar(t);
+    }
   }
   M5.update();
 }
