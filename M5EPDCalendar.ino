@@ -42,12 +42,12 @@ static String connectingMessage = String("Connecting...");
 void showMessage(String mesg)
 {
   canvas.fillCanvas(0);
-  canvas.setTextSize(3);
-  unsigned w = canvas.textWidth(mesg);
-  canvas.drawString(mesg, (SCREEN_WIDTH - w) / 2, SCREEN_HEIGHT / 2);
+  canvas.setTextSize(64);
+  canvas.drawString(mesg, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
   canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
 }
 
+/*
 void showTime(time_t t)
 {
   struct tm timeInfo;
@@ -63,6 +63,7 @@ void showTime(time_t t)
   showMessage(now);
   delay(1000);
 }
+*/
 
 #define MIN_VOLTAGE 3300
 #define MAX_VOLTAGE 4350
@@ -76,7 +77,7 @@ showBatteryStatus()
   char buf[6];
   sprintf(buf, "%d%%", batstat);
 
-  canvas.setTextSize(3);
+  canvas.setTextSize(32);
   canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - PADX, SCREEN_HEIGHT - 30);
   canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
 }
@@ -149,16 +150,16 @@ showCalendar(time_t t)
   today = wdayname + monthname + String(buf);
 
   // Show info for Today
-  canvas.setTextSize(8);
-  canvas.drawString(today, (SCREEN_WIDTH - canvas.textWidth(today)) / 2, posy);
+  canvas.setTextSize(64);
+  canvas.drawString(today, SCREEN_WIDTH / 2, posy);
 
-  canvas.setTextSize(6);
   posy += 90;
   posx = 0;
 
+  canvas.setTextSize(32);
   // showing week name header
   for (int i = 1 ; i <= 7 ; i++) {
-    canvas.drawString(shortwdays[i], posx + (COLWIDTH - canvas.textWidth(shortwdays[i])) / 2, posy);
+    canvas.drawString(shortwdays[i], posx + COLWIDTH / 2, posy);
     posx += COLWIDTH;
   }
   posy += COLHEIGHT;
@@ -171,6 +172,7 @@ showCalendar(time_t t)
 
   #define REVPADDING 10
   
+  canvas.setTextSize(48);
   for (unsigned i = 1 ; i <= lastday ; i++) {
     String s;
 
@@ -182,7 +184,7 @@ showCalendar(time_t t)
 
     dateText(buf, i);
     s = String(buf);
-    canvas.drawString(s, (wod - 1) * COLWIDTH + (COLWIDTH - canvas.textWidth(s)) / 2, posy);
+    canvas.drawString(s, (wod - 1) * COLWIDTH + COLWIDTH / 2, posy);
     if (7 < ++wod) {
       wod = 1;
       posy += COLHEIGHT;
@@ -249,7 +251,7 @@ void shutdownToWakeup(time_t t)
   Serial.print(sleepsec);
   Serial.println(" sec");
   
-  M5.shutdown(60);
+  M5.shutdown(sleepsec);
 }
 
 void setup()
@@ -289,10 +291,13 @@ void setup()
   M5.RTC.begin(); // real time clock
 
   canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
-  canvas.setTextSize(3);
+  canvas.loadFont("/font.ttf", SD); // Load font files from SD Card
+  canvas.setTextDatum(TC_DATUM);
+  
+  canvas.createRender(32, 256);
+  canvas.createRender(48, 256);
+  canvas.createRender(64, 256);
       
-  showTime(t);
-
   connectWiFi();
   showMessage(String("Synchronizing time..."));
   if (NTPSync()) {
