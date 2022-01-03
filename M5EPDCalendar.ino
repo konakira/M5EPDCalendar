@@ -43,7 +43,6 @@ void showMessage(String mesg)
   canvas.setTextDatum(MC_DATUM);
   canvas.drawString(mesg, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
-  canvas.setTextDatum(TC_DATUM);
 }
 
 /*
@@ -77,7 +76,8 @@ showBatteryStatus()
   sprintf(buf, "%d%%", batstat);
 
   canvas.setTextSize(32);
-  canvas.drawString(buf, SCREEN_WIDTH - canvas.textWidth(buf) - 10, SCREEN_HEIGHT - 30);
+  canvas.setTextDatum(BR_DATUM);
+  canvas.drawString(buf, SCREEN_WIDTH, SCREEN_HEIGHT);
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
 
@@ -146,6 +146,7 @@ showCalendar(time_t t)
   today = wdayname + monthname + String(buf);
 
   // Show info for Today
+  canvas.setTextDatum(TC_DATUM);
   canvas.setTextSize(64);
   canvas.drawString(today, SCREEN_WIDTH / 2, posy);
 
@@ -180,6 +181,7 @@ showCalendar(time_t t)
 
     dayText(buf, i);
     s = String(buf);
+    canvas.setTextDatum(TC_DATUM);
     canvas.drawString(s, (wod - 1) * COLWIDTH + COLWIDTH / 2, posy);
     if (7 < ++wod) {
       wod = 1;
@@ -248,6 +250,20 @@ void shutdownToWakeup(time_t t)
   Serial.print("Sleeping ");
   Serial.print(sleepsec);
   Serial.println(" sec");
+
+  { // showing current time and sleeping seconds for debug purpose
+    char buf[40];
+    String mesg;
+
+    snprintf(buf, sizeof(buf), "Sleeping %ld sec from %d:%02d:%02d",
+	     sleepsec, ti.tm_hour, ti.tm_min, ti.tm_sec);
+
+    canvas.setTextSize(32);
+    canvas.setTextDatum(BC_DATUM);
+    canvas.drawString(String(buf), SCREEN_WIDTH / 2, SCREEN_HEIGHT - 1);
+    canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
+    delay(1000);
+  }
   
   M5.shutdown(sleepsec);
 }
@@ -277,9 +293,8 @@ void setup()
   M5.EPD.Clear(true); 
   M5.RTC.begin(); // real time clock
 
-  canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
+  canvas.createCanvas(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
   canvas.loadFont("/font.ttf", SD); // Load font files from SD Card
-  canvas.setTextDatum(TC_DATUM);
   
   canvas.createRender(32, 256);
   canvas.createRender(48, 256);
