@@ -229,7 +229,7 @@ bool NTPSync()
 void shutdownToWakeup(time_t t)
 {
   struct tm ti;
-  time_t sleepsec;
+  int sleepsec;
 
   Serial.println("Shutting down right now.");
 
@@ -252,7 +252,7 @@ void shutdownToWakeup(time_t t)
     char buf[40];
     String mesg;
 
-    snprintf(buf, sizeof(buf), "Sleeping %ld sec from %d:%02d:%02d",
+    snprintf(buf, sizeof(buf), "Sleeping %d sec from %d:%02d:%02d",
 	     sleepsec, ti.tm_hour, ti.tm_min, ti.tm_sec);
 
     canvas.setTextSize(32);
