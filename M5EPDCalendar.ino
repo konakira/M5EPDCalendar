@@ -38,7 +38,6 @@ static String connectingMessage = String("Connecting...");
 
 void showMessage(String mesg)
 {
-  canvas.fillCanvas(0);
   canvas.setTextSize(64);
   canvas.setTextDatum(MC_DATUM);
   canvas.drawString(mesg, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
@@ -79,6 +78,10 @@ showBatteryStatus()
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
 
+static unsigned day = 0;
+static time_t lastNTPTime = 0;
+const unsigned long NTP_INTERVAL = (30 * 24 * 60 * 60); // NTP sync once in 30 days
+
 String months[] = {String("January "), String("February "), String("March "),
 		   String("April "), String("May "), String("June "),
 		   String("July "), String("August "), String("September "),
@@ -115,8 +118,6 @@ unsigned getLastDayOfMonth(time_t t)
   return 32 - timeInfo.tm_mday;
 }
 
-static int dayDisplayed = 0;
-
 void
 showCalendar(time_t t)
 {
@@ -138,9 +139,9 @@ showCalendar(time_t t)
 
   String wdayname = wdays[timeInfo.tm_wday];
   String monthname = months[timeInfo.tm_mon];
-  dayDisplayed = timeInfo.tm_mday;
+  day = timeInfo.tm_mday;
 
-  dayText(buf, dayDisplayed);
+  dayText(buf, day);
   today = wdayname + monthname + String(buf);
 
   // Show info for Today
@@ -169,7 +170,7 @@ showCalendar(time_t t)
   
   canvas.setTextSize(48);
   for (unsigned i = 1 ; i <= lastday ; i++) {
-    if (i == dayDisplayed) {
+    if (i == day) {
       canvas.setTextColor(0);
       canvas.fillRect((wod - 1) * COLWIDTH + REVPADDING, posy - 5,
 		      COLWIDTH - 2 * REVPADDING, COLHEIGHT, 15);
@@ -183,7 +184,7 @@ showCalendar(time_t t)
       posy += COLHEIGHT;
     }
 
-    if (i == dayDisplayed) {
+    if (i == day) {
       canvas.setTextColor(15);
     }
   }
@@ -219,6 +220,7 @@ bool NTPSync()
     configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
     time_t t;
     for (t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
+    lastNTPTime = t;    
     retval = true;
   }
   return retval;
@@ -264,24 +266,15 @@ void shutdownToWakeup(time_t t)
   M5.shutdown(sleepsec);
 }
 
+// reading RTC to set the system time via settimeofday().
 void rtcTime()
 {
   rtc_time_t rt;
   rtc_date_t rd;
   struct tm ti;
-  char buf[40];
 
   M5.RTC.getTime(&rt);
   M5.RTC.getDate(&rd);
-
-  snprintf(buf, sizeof(buf), "%04d/%d/%d %d:%02d:%02d",
-	   rd.year, rd.mon, rd.day, rt.hour, rt.min, rt.sec);
-  canvas.setTextSize(32);
-  canvas.setTextDatum(BC_DATUM);
-  canvas.drawString(buf, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 1);
-  Serial.println(buf);
-  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
-  delay(1000);
   {
     ti.tm_year = rd.year - 1900;
     ti.tm_mon = rd.mon - 1;
@@ -293,10 +286,6 @@ void rtcTime()
     ti.tm_wday = ti.tm_yday = 0; // mktime() ignores them.
   }
   time_t t = mktime(&ti);
-
-  showTime(t);
-  delay(1000);
-  
   struct timeval tv;
   tv.tv_sec = t;
   tv.tv_usec = 0;
@@ -310,23 +299,34 @@ void setup()
 
   //  Check power on reason before calling M5.begin()
   //  which calls RTC.begin() which clears the timer flag.
-  // Wire.begin(21, 22);                  
-  // uint8_t data = M5.RTC.readReg(0x01);
-  // bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
-
+  /*
+  {
+    Wire.begin(21, 22);                  
+    uint8_t data = M5.RTC.readReg(0x01);
+    bool wokeup = ((data & 4) == 4); // true means woke up by RTC, not by power button
+  }
+  */
+  
+  pref.begin(prefname, false);
+  day = pref.getInt("day", 0);
+  lastNTPTime = pref.getLong("lastntp", 0);
+  pref.clear(); // clear the preferences for unexpected reset
+  pref.end();
+  
   // M5.enableMainPower();
   M5.begin();
   Serial.println("Program started.");
   
-  time_t t = time(NULL);
-  struct tm timeInfo;
-  localtime_r(&t, &timeInfo);
-
   // M5.enableEPDPower();
   M5.EPD.SetRotation(0); // electric paper display
   // M5.TP.SetRotation(0); // touch panel
   M5.EPD.Clear(true); 
   M5.RTC.begin(); // real time clock
+
+  rtcTime();
+  time_t t = time(NULL);
+  struct tm timeInfo;
+  localtime_r(&t, &timeInfo);
 
   canvas.createCanvas(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
   canvas.loadFont("/font.ttf", SD); // Load font files from SD Card
@@ -335,27 +335,27 @@ void setup()
   canvas.createRender(48, 256);
   canvas.createRender(64, 256);
 
-  showTime(t);
-  rtcTime();
-  t = time(NULL);
-  showTime(t);
-
-  connectWiFi();
-  showMessage(String("Synchronizing time..."));
-  if (NTPSync()) {
-    showMessage(String("Time synchromized."));
+  if (lastNTPTime + NTP_INTERVAL < t) { // synchronize with NTP server 30 days after last sync
+    connectWiFi();
+    showMessage(String("Synchronizing time..."));
+    if (NTPSync()) {
+      showMessage(String("Time synchromized."));
+    }
+    else {
+      showMessage(String("Synchromization failed."));
+    }
+    t = time(NULL); // obtain synchronized time
   }
-  else {
-    showMessage(String("Synchromization failed."));
-  }
-  t = time(NULL); // obtain synchronized time
 
-  delay(500);
   showCalendar(t);
+
+  pref.begin(prefname, false);
+  pref.putInt("day", day);
+  pref.putLong("lastntp", lastNTPTime);
+  pref.end();
+
   delay(500);
-
   shutdownToWakeup(t);
-
   delay(500);
 }
 
@@ -368,7 +368,7 @@ void loop()
     time_t t = time(NULL);
     struct tm ti;
     localtime_r(&t, &ti);
-    if (dayDisplayed != ti.tm_mday) { // update display if day changed
+    if (day != ti.tm_mday) { // update display if day changed
       showCalendar(t);
     }
   }
