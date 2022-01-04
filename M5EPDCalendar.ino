@@ -45,7 +45,6 @@ void showMessage(String mesg)
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
 
-/*
 void showTime(time_t t)
 {
   struct tm timeInfo;
@@ -61,7 +60,6 @@ void showTime(time_t t)
   showMessage(now);
   delay(1000);
 }
-*/
 
 #define MIN_VOLTAGE 3300
 #define MAX_VOLTAGE 4350
@@ -171,8 +169,6 @@ showCalendar(time_t t)
   
   canvas.setTextSize(48);
   for (unsigned i = 1 ; i <= lastday ; i++) {
-    String s;
-
     if (i == dayDisplayed) {
       canvas.setTextColor(0);
       canvas.fillRect((wod - 1) * COLWIDTH + REVPADDING, posy - 5,
@@ -180,9 +176,8 @@ showCalendar(time_t t)
     }
 
     dayText(buf, i);
-    s = String(buf);
     canvas.setTextDatum(TC_DATUM);
-    canvas.drawString(s, (wod - 1) * COLWIDTH + COLWIDTH / 2, posy);
+    canvas.drawString(buf, (wod - 1) * COLWIDTH + COLWIDTH / 2, posy);
     if (7 < ++wod) {
       wod = 1;
       posy += COLHEIGHT;
@@ -260,12 +255,52 @@ void shutdownToWakeup(time_t t)
 
     canvas.setTextSize(32);
     canvas.setTextDatum(BC_DATUM);
-    canvas.drawString(String(buf), SCREEN_WIDTH / 2, SCREEN_HEIGHT - 1);
+    canvas.drawString(buf, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 1);
+    Serial.println(buf);
     canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
     delay(1000);
   }
   
   M5.shutdown(sleepsec);
+}
+
+void rtcTime()
+{
+  rtc_time_t rt;
+  rtc_date_t rd;
+  struct tm ti;
+  char buf[40];
+
+  M5.RTC.getTime(&rt);
+  M5.RTC.getDate(&rd);
+
+  snprintf(buf, sizeof(buf), "%04d/%d/%d %d:%02d:%02d",
+	   rd.year, rd.mon, rd.day, rt.hour, rt.min, rt.sec);
+  canvas.setTextSize(32);
+  canvas.setTextDatum(BC_DATUM);
+  canvas.drawString(buf, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 1);
+  Serial.println(buf);
+  canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
+  delay(1000);
+  {
+    ti.tm_year = rd.year - 1900;
+    ti.tm_mon = rd.mon - 1;
+    ti.tm_mday = rd.day;
+    ti.tm_hour = rt.hour;
+    ti.tm_min = rt.min;
+    ti.tm_sec = rt.sec;
+    ti.tm_isdst = 0;
+    ti.tm_wday = ti.tm_yday = 0; // mktime() ignores them.
+  }
+  time_t t = mktime(&ti);
+
+  showTime(t);
+  delay(1000);
+  
+  struct timeval tv;
+  tv.tv_sec = t;
+  tv.tv_usec = 0;
+  settimeofday(&tv, NULL);
 }
 
 void setup()
@@ -299,7 +334,12 @@ void setup()
   canvas.createRender(32, 256);
   canvas.createRender(48, 256);
   canvas.createRender(64, 256);
-      
+
+  showTime(t);
+  rtcTime();
+  t = time(NULL);
+  showTime(t);
+
   connectWiFi();
   showMessage(String("Synchronizing time..."));
   if (NTPSync()) {
