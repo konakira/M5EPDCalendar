@@ -74,7 +74,7 @@ showBatteryStatus()
 
   canvas.setTextSize(32);
   canvas.setTextDatum(BR_DATUM);
-  canvas.drawString(buf, SCREEN_WIDTH, SCREEN_HEIGHT);
+  canvas.drawString(buf, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
 }
 
@@ -264,6 +264,8 @@ void shutdownToWakeup(time_t t)
   }
   
   M5.shutdown(sleepsec);
+  // this may fail but will take effect after unplugging USB cable,
+  // so that, it is not necessary to shutdown() again.
 }
 
 // reading RTC to set the system time via settimeofday().
@@ -328,7 +330,7 @@ void setup()
   struct tm timeInfo;
   localtime_r(&t, &timeInfo);
 
-  canvas.createCanvas(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+  canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
   canvas.loadFont("/font.ttf", SD); // Load font files from SD Card
   
   canvas.createRender(32, 256);
@@ -361,16 +363,11 @@ void setup()
 
 void loop()
 {
-  if (M5.BtnP.wasPressed()) {
-    shutdownToWakeup(time(NULL)); // may return if USB cable is connected.
-  }
-  else {
-    time_t t = time(NULL);
-    struct tm ti;
-    localtime_r(&t, &ti);
-    if (day != ti.tm_mday) { // update display if day changed
-      showCalendar(t);
-    }
+  time_t t = time(NULL);
+  struct tm ti;
+  localtime_r(&t, &ti);
+  if (day != ti.tm_mday) { // update display if day changed
+    showCalendar(t);
   }
   M5.update();
 }
