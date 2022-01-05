@@ -226,34 +226,33 @@ bool NTPSync()
   return retval;
 }
 
-void shutdownToWakeup(time_t t)
+void shutdownToWakeup()
 {
-  struct tm ti;
-  int sleepsec;
-
   Serial.println("Shutting down right now.");
 
-  /* Not working
   rtc_time_t wutime;
+  wutime.hour = 0;
+  wutime.min = 0;
+  wutime.sec = 00; // sec ignored
 
-  wutime.hour = wutime.min = wutime.sec = 0;
-  M5.shutdown(wutime); // not working
-  */
-  
+  time_t t = time(NULL);
+  struct tm ti;
   localtime_r(&t, &ti);
 
-  sleepsec = 24 * 3600 - ((ti.tm_hour * 60 + ti.tm_min) * 60 + ti.tm_sec);
+  if (ti.tm_hour == wutime.hour && ti.tm_min == wutime.min) {
+    // wait for 60 seconds to prevent waking up just after shutdown().
+    delay((60 - ti.tm_sec) * 1000); 
+  }
 
-  Serial.print("Sleeping ");
-  Serial.print(sleepsec);
-  Serial.println(" sec");
-
-  { // showing current time and sleeping seconds for debug purpose
+  { // showing current time for debug purpose
     char buf[40];
     String mesg;
 
-    snprintf(buf, sizeof(buf), "Sleeping %d sec from %d:%02d:%02d",
-	     sleepsec, ti.tm_hour, ti.tm_min, ti.tm_sec);
+    t = time(NULL);
+    localtime_r(&t, &ti);
+
+    snprintf(buf, sizeof(buf), "Sleeping from %d:%02d:%02d",
+	     ti.tm_hour, ti.tm_min, ti.tm_sec);
 
     canvas.setTextSize(32);
     canvas.setTextDatum(BC_DATUM);
@@ -262,10 +261,15 @@ void shutdownToWakeup(time_t t)
     canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
     delay(1000);
   }
-  
-  M5.shutdown(sleepsec);
+
+  // M5.shutdown(wutime) works only if modifying the source code of
+  // .pio/libdeps/m5stack-fire/M5EPD/src/utility/BM8563.cpp to be commented out
+  // the following portion around line 229:
+  // out_buf[2] = 0x00;
+  // out_buf[3] = 0x00;
+  M5.shutdown(wutime);
   // this may fail but will take effect after unplugging USB cable,
-  // so that, it is not necessary to shutdown() again.
+  // so that, it is not necessary to shutdown() in loop().
 }
 
 // reading RTC to set the system time via settimeofday().
@@ -357,18 +361,18 @@ void setup()
   pref.end();
 
   delay(500);
-  shutdownToWakeup(t);
+  shutdownToWakeup();
   delay(500);
 }
 
 void loop()
 {
-  time_t t = time(NULL);
   struct tm ti;
+  M5.update();
+  time_t t = time(NULL);
   localtime_r(&t, &ti);
   if (day != ti.tm_mday) { // update display if day changed
     showCalendar(t);
   }
-  M5.update();
 }
 
