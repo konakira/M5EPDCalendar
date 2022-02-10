@@ -206,6 +206,42 @@ void connectWiFi()
   showMacAddr();
 }
 
+// reading RTC to set the system time via settimeofday().
+void rtcTime()
+{
+  rtc_time_t rt;
+  rtc_date_t rd;
+  struct tm ti;
+
+  M5.RTC.getTime(&rt);
+  M5.RTC.getDate(&rd);
+  {
+    ti.tm_year = rd.year - 1900;
+    ti.tm_mon = rd.mon - 1;
+    ti.tm_mday = rd.day;
+    ti.tm_hour = rt.hour;
+    ti.tm_min = rt.min;
+    ti.tm_sec = rt.sec;
+    ti.tm_isdst = 0;
+    ti.tm_wday = ti.tm_yday = 0; // mktime() ignores them.
+  }
+  time_t t = mktime(&ti);
+  struct timeval tv;
+  tv.tv_sec = t;
+  tv.tv_usec = 0;
+  settimeofday(&tv, NULL);
+}
+
+// clear system time
+void clearTime()
+{
+  time_t t = 0;
+  struct timeval tv;
+  tv.tv_sec = t;
+  tv.tv_usec = 0;
+  settimeofday(&tv, NULL);
+}
+
 static const time_t recentPastTime = 1500000000UL; // 2017/7/14 2:40:00 JST
 
 bool NTPSync()
@@ -216,12 +252,17 @@ bool NTPSync()
     connectWiFi();
   }
   if (WiFi.status() == WL_CONNECTED) {
+    // clear system time
+    clearTime(); // in order for the line below to wait for NTP to synchronize
     // check NTP
     configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
     time_t t;
     for (t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
     lastNTPTime = t;    
     retval = true;
+  }
+  if (!retval) { // to restore time from RTC if NTP Sync failed.
+    rtcTime();
   }
   return retval;
 }
@@ -272,30 +313,17 @@ void shutdownToWakeup()
   // so that, it is not necessary to shutdown() in loop().
 }
 
-// reading RTC to set the system time via settimeofday().
-void rtcTime()
+void
+showDateToSerial(time_t t)
 {
-  rtc_time_t rt;
-  rtc_date_t rd;
   struct tm ti;
-
-  M5.RTC.getTime(&rt);
-  M5.RTC.getDate(&rd);
-  {
-    ti.tm_year = rd.year - 1900;
-    ti.tm_mon = rd.mon - 1;
-    ti.tm_mday = rd.day;
-    ti.tm_hour = rt.hour;
-    ti.tm_min = rt.min;
-    ti.tm_sec = rt.sec;
-    ti.tm_isdst = 0;
-    ti.tm_wday = ti.tm_yday = 0; // mktime() ignores them.
-  }
-  time_t t = mktime(&ti);
-  struct timeval tv;
-  tv.tv_sec = t;
-  tv.tv_usec = 0;
-  settimeofday(&tv, NULL);
+  localtime_r(&t, &ti);
+  
+  Serial.print(ti.tm_year + 1900);
+  Serial.print("/");
+  Serial.print(ti.tm_mon + 1);
+  Serial.print("/");
+  Serial.println(ti.tm_mday);
 }
 
 void setup()
@@ -341,11 +369,14 @@ void setup()
   canvas.createRender(48, 256);
   canvas.createRender(64, 256);
 
+  showDateToSerial(lastNTPTime);
+  showDateToSerial(lastNTPTime + NTP_INTERVAL);
+
   if (lastNTPTime + NTP_INTERVAL < t) { // synchronize with NTP server 30 days after last sync
     connectWiFi();
     showMessage(String("Synchronizing time..."));
     if (NTPSync()) {
-      showMessage(String("Time synchromized."));
+      showMessage(String("Synchronization done..."));
     }
     else {
       showMessage(String("Synchromization failed."));
