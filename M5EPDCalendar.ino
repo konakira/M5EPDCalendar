@@ -80,6 +80,7 @@ showBatteryStatus()
 
 static unsigned day = 0;
 static time_t lastNTPTime = 0;
+static bool useRTCTime = false;
 const unsigned long NTP_INTERVAL = (30 * 24 * 60 * 60); // NTP sync once in 30 days
 
 String months[] = {String("January "), String("February "), String("March "),
@@ -232,14 +233,23 @@ void rtcTime()
   settimeofday(&tv, NULL);
 }
 
-// clear system time
-void clearTime()
+// setting RTC from the system time
+void setRtcTime(time_t t)
 {
-  time_t t = 0;
-  struct timeval tv;
-  tv.tv_sec = t;
-  tv.tv_usec = 0;
-  settimeofday(&tv, NULL);
+  rtc_time_t rt;
+  rtc_date_t rd;
+  struct tm ti;
+  localtime_r(&t, &ti);
+  {
+    rd.year = ti.tm_year + 1900;
+    rd.mon = ti.tm_mon + 1;
+    rd.day = ti.tm_mday;
+    rt.hour = ti.tm_hour;
+    rt.min = ti.tm_min;
+    rt.sec = ti.tm_sec;
+  }
+  M5.RTC.setTime(&rt);
+  M5.RTC.setDate(&rd);
 }
 
 static const time_t recentPastTime = 1500000000UL; // 2017/7/14 2:40:00 JST
@@ -252,17 +262,13 @@ bool NTPSync()
     connectWiFi();
   }
   if (WiFi.status() == WL_CONNECTED) {
-    // clear system time
-    clearTime(); // in order for the line below to wait for NTP to synchronize
     // check NTP
     configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com", "ntp.jst.mfeed.ad.jp");
     time_t t;
     for (t = 0 ; t < recentPastTime ; t = time(NULL)); // wait for NTP to synchronize
-    lastNTPTime = t;    
+    lastNTPTime = t;
+    setRtcTime(t);
     retval = true;
-  }
-  if (!retval) { // to restore time from RTC if NTP Sync failed.
-    rtcTime();
   }
   return retval;
 }
@@ -344,6 +350,7 @@ void setup()
   pref.begin(prefname, false);
   day = pref.getInt("day", 0);
   lastNTPTime = pref.getLong("lastntp", 0);
+  useRTCTime = pref.getBool("usertctime", 0);
   pref.clear(); // clear the preferences for unexpected reset
   pref.end();
   
@@ -357,11 +364,6 @@ void setup()
   M5.EPD.Clear(true); 
   M5.RTC.begin(); // real time clock
 
-  rtcTime();
-  time_t t = time(NULL);
-  struct tm timeInfo;
-  localtime_r(&t, &timeInfo);
-
   canvas.createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
   canvas.loadFont("/font.ttf", SD); // Load font files from SD Card
   
@@ -369,26 +371,40 @@ void setup()
   canvas.createRender(48, 256);
   canvas.createRender(64, 256);
 
-  showDateToSerial(lastNTPTime);
-  showDateToSerial(lastNTPTime + NTP_INTERVAL);
-
-  if (lastNTPTime + NTP_INTERVAL < t) { // synchronize with NTP server 30 days after last sync
+  time_t t;
+  if (useRTCTime) { // obtain current time from RTC
+    rtcTime();
+    t = time(NULL);
+    struct tm timeInfo;
+    localtime_r(&t, &timeInfo);
+  }
+  else { // obtain current time from NTP server. This happens every NTP_Interval
     connectWiFi();
+    Serial.println("Synchronizing time...");
     showMessage(String("Synchronizing time..."));
     if (NTPSync()) {
+      Serial.println("Synchronization done...");
       showMessage(String("Synchronization done..."));
     }
     else {
+      Serial.println("Synchronization failed.");
       showMessage(String("Synchromization failed."));
     }
     t = time(NULL); // obtain synchronized time
   }
+
+  showDateToSerial(lastNTPTime);
+  showDateToSerial(lastNTPTime + NTP_INTERVAL);
+
+  // synchronize with NTP server 30 days after last sync
+  useRTCTime = (t < lastNTPTime + NTP_INTERVAL); // this variable will be used at the next wake up
 
   showCalendar(t);
 
   pref.begin(prefname, false);
   pref.putInt("day", day);
   pref.putLong("lastntp", lastNTPTime);
+  pref.putBool("usertctime", useRTCTime);
   pref.end();
 
   delay(500);
