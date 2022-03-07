@@ -295,11 +295,9 @@ void shutdownToWakeup()
     char buf[40];
     String mesg;
 
-    t = time(NULL);
-    localtime_r(&t, &ti);
+    localtime_r(&lastNTPTime, &ti);
 
-    snprintf(buf, sizeof(buf), "Sleeping from %d:%02d:%02d",
-	     ti.tm_hour, ti.tm_min, ti.tm_sec);
+    snprintf(buf, sizeof(buf), "Last time sync: %s %d", months[ti.tm_mon], ti.tm_mday);
 
     canvas.setTextSize(32);
     canvas.setTextDatum(BC_DATUM);
