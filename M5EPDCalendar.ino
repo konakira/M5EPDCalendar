@@ -297,7 +297,7 @@ void shutdownToWakeup()
 
     localtime_r(&lastNTPTime, &ti);
 
-    snprintf(buf, sizeof(buf), "Last time sync: %s %d", months[ti.tm_mon], ti.tm_mday);
+    snprintf(buf, sizeof(buf), "Last time sync: %s %d", months[ti.tm_mon].c_str(), ti.tm_mday);
 
     canvas.setTextSize(32);
     canvas.setTextDatum(BC_DATUM);
