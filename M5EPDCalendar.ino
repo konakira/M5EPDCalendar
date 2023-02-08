@@ -60,8 +60,8 @@ void showTime(time_t t)
   delay(1000);
 }
 
-#define MIN_VOLTAGE 3300
-#define MAX_VOLTAGE 4350
+#define MIN_VOLTAGE 3058
+#define MAX_VOLTAGE 4203
 
 void
 showBatteryStatus()
