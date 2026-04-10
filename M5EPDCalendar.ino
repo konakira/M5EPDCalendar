@@ -69,6 +69,7 @@ showBatteryStatus()
   double vbat = M5.getBatteryVoltage();
   //  int charging = M5.Axp.GetBatCurrent();
   unsigned batstat = (unsigned)((vbat - MIN_VOLTAGE) * 100 / (MAX_VOLTAGE - MIN_VOLTAGE));
+  if (100 < batstat) batstat = 100;
   char buf[6];
   sprintf(buf, "%d%%", batstat);
 
