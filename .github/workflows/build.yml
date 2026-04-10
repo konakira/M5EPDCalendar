@@ -3,6 +3,10 @@ name: PlatformIO CI
 on:
   push:
     branches: [ "main", "master" ]
+    paths-ignore:
+      - '**.md'  # Changes to files ending in ".md" will skip the test!
+      - '.gitignore'
+      - 'images/**'
   pull_request:
     branches: [ "main", "master" ]
 
