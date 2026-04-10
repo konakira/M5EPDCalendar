@@ -1,5 +1,5 @@
 # M5Paper Low-Power Calendar Dashboard
-d
+
 [![PlatformIO CI](https://github.com/konakira/M5EPDCalendar/actions/workflows/build.yml/badge.svg)](https://github.com/konakira/M5EPDCalendar/actions)
 
 A highly efficient, minimalist calendar dashboard for the M5Stack M5Paper (M5EPD), featuring deep-sleep technology and customizable week-start options.
