@@ -91,8 +91,13 @@ String months[] = {String("January "), String("February "), String("March "),
 String wdays[] = {String("Sunday, "), String("Monday, "), String("Tuesday, "), String("Wednesday, "),
 		  String("Thursday, "), String("Friday, "), String("Saturday, ")};
 
+#ifdef SUNDAY_START
+String shortwdays[] = {String(""), String("SUN"), String("MON"), String("TUE"), String("WED"), 
+                       String("THU"), String("FRI"), String("SAT")};
+#else
 String shortwdays[] = {String("SUN"), String("MON"), String("TUE"), String("WED"),
 		       String("THU"), String("FRI"), String("SAT"), String("SUN")};
+#endif
 
 void dayText(char *buf, unsigned d)
 {
@@ -163,9 +168,13 @@ showCalendar(time_t t)
 
   // getting week of day
   int wod = (timeInfo.tm_wday + 35 - (timeInfo.tm_mday - 1)) % 7;
-  if (wod == 0) {
+#ifdef SUNDAY_START
+  wod = wod + 1; // 0(SUN) -> 1, 1(MON) -> 2... とズラす
+#else
+  if (wod == 0) { // 日曜(0)を月曜はじまりの最後(7)に持っていく
     wod = 7;
   }
+#endif
 
   #define REVPADDING 10
   
